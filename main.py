@@ -10,24 +10,31 @@ from scipy.interpolate import make_interp_spline
 CIUDADES = {
     "Arequipa (Peru)": {"lat": -16.3988, "lon": -71.5350},
     "Bogota (Colombia)": {"lat": 4.7110, "lon": -74.0721},
-    "Hidalgo (Mexico)": {"lat": 20.1256, "lon": -98.7364},  }
+    "Hidalgo (Mexico)": {"lat": 20.1256, "lon": -98.7364}, }
 
-def obtener_datos_pasados(dias_atras=30):
+
+def obtener_datos_pasados(fecha_inicio, fecha_fin):
     """
-    Obtiene exactamente los datos históricos diarios reales de los últimos N días 
-    para las tres ciudades (tal como en tu código original).
-    """
-    hoy = datetime.now().date()
-    inicio = hoy - timedelta(days=dias_atras)
+    Obtiene los datos históricos diarios de Open-Meteo Archive para un rango de fechas específico.
     
+    Parámetros:
+    - fecha_inicio (str o datetime.date): Fecha de inicio en formato 'YYYY-MM-DD'
+    - fecha_fin (str o datetime.date): Fecha de fin en formato 'YYYY-MM-DD'
+    """
+    # Asegurar formato de cadena si se pasan como objetos datetime o date
+    if isinstance(fecha_inicio, (datetime, pd.Timestamp)):
+        fecha_inicio = fecha_inicio.strftime('%Y-%m-%d')
+    if isinstance(fecha_fin, (datetime, pd.Timestamp)):
+        fecha_fin = fecha_fin.strftime('%Y-%m-%d')
+        
     todos_los_registros = []
     
     for nombre, coords in CIUDADES.items():
-        # Consulta directa diaria de Open-Meteo Archive
+        # Consulta directa diaria de Open-Meteo Archive con el rango personalizado
         url = (
             f"https://archive-api.open-meteo.com/v1/archive?"
             f"latitude={coords['lat']}&longitude={coords['lon']}"
-            f"&start_date={inicio}&end_date={hoy}"
+            f"&start_date={fecha_inicio}&end_date={fecha_fin}"
             f"&daily=temperature_2m_mean"
         )
         
@@ -37,6 +44,10 @@ def obtener_datos_pasados(dias_atras=30):
             continue
             
         data = response.json()
+        if "daily" not in data:
+            print(f"No se encontraron datos diarios para {nombre} en el rango especificado.")
+            continue
+            
         fechas = data["daily"]["time"]
         temperaturas = data["daily"]["temperature_2m_mean"]
         
@@ -50,13 +61,13 @@ def obtener_datos_pasados(dias_atras=30):
             
     return pd.DataFrame(todos_los_registros)
 
-def generar_grafica_diaria_suavizada(df):
+def generar_grafica_diaria_suavizada(df, fecha_inicio, fecha_fin):
     """
-    Mantiene el formato de tu gráfica original (las 3 ciudades juntas con sus puntos diarios),
-    pero curva las líneas de manera fluida y continua.
+    Mantiene el formato de la gráfica original con curvas suaves,
+    actualizando el título con el rango de fechas consultado.
     """
     if df.empty:
-        print("No hay datos históricos para graficar.")
+        print("No hay datos históricos para graficar en el rango seleccionado.")
         return
 
     plt.figure(figsize=(14, 7))
@@ -77,27 +88,26 @@ def generar_grafica_diaria_suavizada(df):
         y = grupo["Temperatura"].values
         color_actual = colores.get(ubicacion, "black")
 
-        # Dibujar los puntos reales (los círculos pequeños de tus datos diarios)
+        # Dibujar los puntos reales
         plt.scatter(grupo["Tiempo"], y, color=color_actual, s=30, zorder=3)
 
         # Crear una línea curva y suave que pase por los puntos diarios
         if len(x) > 3:
             x_suave = np.linspace(x.min(), x.max(), 300)
             try:
-                # Spline cúbico o cuadrático para suavizar la línea
+                # Spline cúbico para suavizar la línea
                 spline = make_interp_spline(x, y, k=3)
                 y_suave = spline(x_suave)
                 tiempo_suave = mdates.num2date(x_suave)
                 
                 plt.plot(tiempo_suave, y_suave, color=color_actual, linewidth=2, label=ubicacion, zorder=2)
             except Exception:
-                # Fallback si ocurre algún detalle numérico
                 plt.plot(grupo["Tiempo"], y, color=color_actual, linewidth=2, label=ubicacion, zorder=2)
         else:
             plt.plot(grupo["Tiempo"], y, color=color_actual, linewidth=2, label=ubicacion, zorder=2)
 
-    # Configuración de la gráfica idéntica a tu formato original pero con curvas
-    plt.title("Evolución Histórica de Temperatura (Promedio Diario - Curvas Suavizadas)", fontsize=14, fontweight='bold')
+    # Configuración de la gráfica con el rango dinámico en el título
+    plt.title(f"Evolución Histórica de Temperatura ({fecha_inicio} al {fecha_fin})", fontsize=14, fontweight='bold')
     plt.xlabel("Fecha", fontsize=12)
     plt.ylabel("Temperatura (°C)", fontsize=12)
     
@@ -116,8 +126,13 @@ def generar_grafica_diaria_suavizada(df):
 # EJECUCIÓN PRINCIPAL
 # ==========================================
 if __name__ == "__main__":
-    print("Consultando datos diarios a la API de Open-Meteo...")
-    df_clima = obtener_datos_pasados(dias_atras=30)
+    # MODIFICA AQUÍ TUS FECHAS DE INICIO Y FIN (Formato 'YYYY-MM-DD')
+    # Nota: La API Archive de Open-Meteo cuenta con datos históricos hasta hace unos días respecto al presente.
+    FECHA_INICIO = "2026-09-25"
+    FECHA_FIN = "2026-10-25"
+    
+    print(f"Consultando datos desde {FECHA_INICIO} hasta {FECHA_FIN} en Open-Meteo...")
+    df_clima = obtener_datos_pasados(FECHA_INICIO, FECHA_FIN)
     
     if not df_clima.empty:
-        generar_grafica_diaria_suavizada(df_clima)
+        generar_grafica_diaria_suavizada(df_clima, FECHA_INICIO, FECHA_FIN)
